@@ -152,13 +152,22 @@ def ai_searches(description: str = Query(...), x_app_token: str | None = Header(
         client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=200,
+            max_tokens=300,
             messages=[{
                 "role": "user",
                 "content": (
-                    "다음 모임 상황에 맞는 카카오 지도 장소 검색어를 3~5개 추출해.\n"
-                    "반드시 JSON 배열 형식으로만 답해. 마크다운이나 설명 없이 배열만.\n"
-                    '예시: ["굿즈샵", "만화카페", "오락실"]\n\n'
+                    "다음 모임 상황에 맞는 카카오맵 장소 검색 방법을 3~5개 제안해.\n"
+                    "카테고리 검색이 키워드 검색보다 정확하므로, 적합한 카테고리가 있으면 반드시 써.\n"
+                    "키워드 검색은 카테고리로 표현 못 하는 틈새 장소(굿즈샵·보드게임카페 등)에만 사용해.\n\n"
+                    "사용 가능한 카테고리 코드:\n"
+                    "FD6=음식점(한식/고기집/레스토랑 등), CE7=카페·디저트,\n"
+                    "AC5=숙박(호텔/모텔/펜션), AT4=관광명소·여행지,\n"
+                    "CT1=문화시설(미술관/박물관/공연장), SW8=지하철역, MT1=대형마트\n\n"
+                    "반드시 JSON 배열만 출력. 마크다운·설명 없이.\n"
+                    "형식: [{\"type\":\"category\",\"code\":\"코드\"} 또는 {\"type\":\"keyword\",\"query\":\"검색어\"}]\n\n"
+                    "예시1(회식): [{\"type\":\"category\",\"code\":\"FD6\"},{\"type\":\"keyword\",\"query\":\"룸 식당\"}]\n"
+                    "예시2(오타쿠 모임): [{\"type\":\"keyword\",\"query\":\"굿즈샵\"},{\"type\":\"keyword\",\"query\":\"만화카페\"}]\n"
+                    "예시3(커플 여행): [{\"type\":\"category\",\"code\":\"AC5\"},{\"type\":\"category\",\"code\":\"AT4\"}]\n\n"
                     f"모임 설명: {description}"
                 ),
             }],
@@ -170,9 +179,20 @@ def ai_searches(description: str = Query(...), x_app_token: str | None = Header(
             if text.startswith("json"):
                 text = text[4:]
             text = text.strip()
-        keywords = json.loads(text)
-        if not isinstance(keywords, list) or not keywords:
+        searches = json.loads(text)
+        if not isinstance(searches, list) or not searches:
             raise ValueError
-        return [{"type": "keyword", "query": str(kw)} for kw in keywords[:5]]
+        # 유효한 항목만 통과 (type/code 또는 type/query 구조 검증)
+        valid = []
+        for s in searches[:5]:
+            if not isinstance(s, dict):
+                continue
+            if s.get("type") == "category" and s.get("code"):
+                valid.append({"type": "category", "code": str(s["code"])})
+            elif s.get("type") == "keyword" and s.get("query"):
+                valid.append({"type": "keyword", "query": str(s["query"])})
+        if not valid:
+            raise ValueError
+        return valid
     except Exception:
         return _DEFAULT_SEARCHES
