@@ -156,14 +156,22 @@ def ai_searches(description: str = Query(...), x_app_token: str | None = Header(
             messages=[{
                 "role": "user",
                 "content": (
-                    "다음 모임 상황에 맞는 카카오 지도 검색 키워드를 3~5개 뽑아줘. "
-                    "JSON 문자열 배열로만 답해. 설명 없이 배열만 출력.\n\n"
+                    "다음 모임 상황에 맞는 카카오 지도 장소 검색어를 3~5개 추출해.\n"
+                    "반드시 JSON 배열 형식으로만 답해. 마크다운이나 설명 없이 배열만.\n"
+                    '예시: ["굿즈샵", "만화카페", "오락실"]\n\n'
                     f"모임 설명: {description}"
                 ),
             }],
         )
-        keywords = json.loads(msg.content[0].text.strip())
-        if not isinstance(keywords, list):
+        text = msg.content[0].text.strip()
+        # 마크다운 코드블록 제거
+        if "```" in text:
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        keywords = json.loads(text)
+        if not isinstance(keywords, list) or not keywords:
             raise ValueError
         return [{"type": "keyword", "query": str(kw)} for kw in keywords[:5]]
     except Exception:
