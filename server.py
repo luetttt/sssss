@@ -6,7 +6,7 @@ import os
 import json
 import concurrent.futures
 import requests
-from fastapi import FastAPI, Query, Header, HTTPException
+from fastapi import FastAPI, Query, Header, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -196,3 +196,52 @@ def ai_searches(description: str = Query(...), x_app_token: str | None = Header(
         return valid
     except Exception:
         return _DEFAULT_SEARCHES
+
+
+# ── AI 장소 재정렬 ────────────────────────────────────────────
+
+@app.post("/ai-rank")
+def ai_rank(
+    data: dict = Body(...),
+    x_app_token: str | None = Header(None),
+):
+    _check_token(x_app_token)
+    description = data.get("description", "")
+    places = data.get("places", [])  # [{"id":"...", "name":"...", "cat":"..."}]
+
+    if not _ANTHROPIC_KEY or not description or not places:
+        return [p["id"] for p in places]
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
+        places_text = "\n".join(
+            f'{i+1}. [{p["id"]}] {p["name"]} / {p["cat"]}'
+            for i, p in enumerate(places[:20])
+        )
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f'모임 설명: "{description}"\n\n'
+                    "아래 장소 중 이 모임에 가장 잘 맞는 것들을 적합한 순서로 골라 id만 JSON 배열로 반환해.\n"
+                    "목적과 무관한 장소는 제외해도 됨. 마크다운 없이 배열만 출력.\n"
+                    '예: ["12345","67890"]\n\n'
+                    f"{places_text}"
+                ),
+            }],
+        )
+        text = msg.content[0].text.strip()
+        if "```" in text:
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        ranked = json.loads(text)
+        if not isinstance(ranked, list) or not ranked:
+            raise ValueError
+        return [str(r) for r in ranked]
+    except Exception:
+        return [p["id"] for p in places]
